@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Unity Blockly</title>
+  <script src="https://unpkg.com/blockly@11.2.1/blockly.min.js"></script>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; }
+    #toolbar { background: #24282c; color: white; padding: 8px; display: flex; gap: 8px; align-items: center; }
+    button { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { opacity: 0.9; }
+    #status { flex: 1; color: #cfd8dc; }
+#blocklyDiv { height: calc(100vh - 48px); width: 100%; }  </style>
+</head>
+<body>
+<div id="toolbar">
+  <button onclick="startNewWorkspace()">New Program</button>
+  <button onclick="saveCSharp()">Save as C#</button>
+  <span style="border-left: 1px solid #444; margin: 0 8px;"></span>
+  <button onclick="saveWorkspaceWithName()">Save Workspace</button>
+  <button onclick="loadWorkspaceFromList()">Load Workspace</button>
+  <button onclick="deleteWorkspace()">Delete Workspace</button>
+  <div id="status">Klaar</div>
+</div>
+
+<div id="savedCodePanel" style="position: fixed; top: 48px; right: 10px; width: 200px; max-height: calc(100vh - 56px); 
+background: #24282c; border: 1px solid #333; border-radius: 4px; padding: 8px; overflow-y: auto; z-index: 1000;
+display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+    <h4 style="margin: 0; color: #fff; font-size: 13px;">Saved Code</h4>
+    <button onclick="toggleSavedCodePanel()" style="padding: 2px 6px; background: #333; color: white; 
+border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">✕</button>
+  </div>
+  <div id="savedCodeList" style="font-size: 11px;"></div>
+  <button onclick="clearAllWorkspaces()" style="width: 100%; margin-top: 8px; padding: 5px; 
+background: #c62828; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px;">Verwijder Alle</button>
+</div>
+
+<div id="blocklyDiv"></div>
+<pre id="codeOutput" style="display:none; margin: 0; padding: 12px; background: #1e272e; color: #dcdcdc; height: 220px; overflow: auto;
+border-top: 1px solid #333; font-family: Consolas, monospace; white-space: pre-wrap; word-break: break-word;"></pre>
+
+<xml id="toolbox" style="display: none">
+  <category name="Events" colour="#5C81A6">
+    <block type="when_game_starts"></block>
+    <block type="when_game_updates"></block>
+    <block type="when_collision_enter_2d"></block>
+    <block type="when_trigger_enter_2d"></block>
+  </category>
+  <category name="Keyboard" colour="#5C81A6">
+    <block type="when_key_pressed"></block>
+    <block type="when_key_held"></block>
+    <block type="when_key_not_pressed"></block>
+  </category>
+  <category name="Actions" colour="#5C81A6">
+    <block type="move_up"></block>
+    <block type="move_down"></block>
+      <block type="move_left"></block>
+  <block type="move_right"></block>
+    <block type="set_position"></block>
+    <block type="turn_direction"></block>
+    <block type="set_scale"></block>
+    <block type="set_color"></block>
+    <block type="set_text"></block>
+    <block type="say_message"></block>
+    <block type="wait_seconds"></block>
+    <block type="create_object"></block>
+    <block type="create_object_at_position"></block>
+    <block type="respawn_named"></block>
+    <block type="destroy_object"></block>
+    <block type="destroy_named"></block>
+    <block type="destroy_by_tag"></block>
+    <block type="open_scene_by_index"></block>
+    <block type="follow_object"></block>
+    <block type="move_towards_object"></block>
+  </category>
+  <category name="Text" colour="#5CA65C">
+    <block type="text"></block>
+    <block type="text_join"></block>
+  </category>
+  <category name="Logic" colour="#5BA55B">
+    <block type="controls_if"></block>
+    <block type="controls_ifelse"></block>
+    <block type="if_gameobject_exists"></block>
+    <block type="if_object_of_type_exists"></block>
+    <block type="if_gameobject_tag_exists"></block>
+    <block type="if_color_equals"></block>
+    <block type="logic_boolean"></block>
+    <block type="logic_compare"></block>
+    <block type="logic_operation"></block>
+  </category>
+  <category name="Math" colour="#9C27B0">
+    <block type="math_number"></block>
+    <block type="math_arithmetic"></block>
+  </category>
+  <category name="Loops" colour="#FF9800">
+    <block type="controls_repeat_ext"></block>
+  </category>
+  <category name="Variables" colour="#A65C81" custom="VARIABLE"></category>
+</xml>
+
+<script>
+var savedCodePrefix = 'blockly_workspace_';
+var autoWorkspaceKey = 'blockly_auto_workspace';
+var prefabDeclarations = [];
+var targetTransformDeclarations = [];
+var usesFollowRoutine = false;
+var destroyObjectDeclarations = [];
+var lastClassName = 'BlocklyProgram';
+var textFieldDeclarations = [];
+var variableCsNames = [];
+var textFieldObjects = {};
+var lastGeneratedCode = '';
+var lastSavedName = '';
+
+var ALL_KEYS = [
+  ["Space","Space"],["Enter","Enter"],["Tab","Tab"],["Backspace","Backspace"],["Escape","Escape"],
+  ["A","A"],["B","B"],["C","C"],["D","D"],["E","E"],["F","F"],["G","G"],["H","H"],["I","I"],["J","J"],
+  ["K","K"],["L","L"],["M","M"],["N","N"],["O","O"],["P","P"],["Q","Q"],["R","R"],["S","S"],["T","T"],
+  ["U","U"],["V","V"],["W","W"],["X","X"],["Y","Y"],["Z","Z"],
+  ["0","Digit0"],["1","Digit1"],["2","Digit2"],["3","Digit3"],["4","Digit4"],["5","Digit5"],
+  ["6","Digit6"],["7","Digit7"],["8","Digit8"],["9","Digit9"],
+  ["Up Arrow","UpArrow"],["Down Arrow","DownArrow"],["Left Arrow","LeftArrow"],["Right Arrow","RightArrow"],
+  ["Shift (Left)","LeftShift"],["Shift (Right)","RightShift"],
+  ["Ctrl (Left)","LeftCtrl"],["Ctrl (Right)","RightCtrl"],
+  ["Alt (Left)","LeftAlt"],["Alt (Right)","RightAlt"],["Caps Lock","CapsLock"],
+  ["F1","F1"],["F2","F2"],["F3","F3"],["F4","F4"],["F5","F5"],["F6","F6"],
+  ["F7","F7"],["F8","F8"],["F9","F9"],["F10","F10"],["F11","F11"],["F12","F12"]
+];
+
+var KEY_MAP = {
+  'Space':'spaceKey','Enter':'enterKey','Tab':'tabKey','Backspace':'backspaceKey','Escape':'escapeKey',
+  'A':'aKey','B':'bKey','C':'cKey','D':'dKey','E':'eKey','F':'fKey','G':'gKey','H':'hKey','I':'iKey',
+  'J':'jKey','K':'kKey','L':'lKey','M':'mKey','N':'nKey','O':'oKey','P':'pKey','Q':'qKey','R':'rKey',
+  'S':'sKey','T':'tKey','U':'uKey','V':'vKey','W':'wKey','X':'xKey','Y':'yKey','Z':'zKey',
+  'Digit0':'digit0Key','Digit1':'digit1Key','Digit2':'digit2Key','Digit3':'digit3Key','Digit4':'digit4Key',
+  'Digit5':'digit5Key','Digit6':'digit6Key','Digit7':'digit7Key','Digit8':'digit8Key','Digit9':'digit9Key',
+  'UpArrow':'upArrowKey','DownArrow':'downArrowKey','LeftArrow':'leftArrowKey','RightArrow':'rightArrowKey',
+  'LeftShift':'leftShiftKey','RightShift':'rightShiftKey','LeftCtrl':'leftCtrlKey','RightCtrl':'rightCtrlKey',
+  'LeftAlt':'leftAltKey','RightAlt':'rightAltKey','CapsLock':'capsLockKey',
+  'F1':'f1Key','F2':'f2Key','F3':'f3Key','F4':'f4Key','F5':'f5Key','F6':'f6Key',
+  'F7':'f7Key','F8':'f8Key','F9':'f9Key','F10':'f10Key','F11':'f11Key','F12':'f12Key'
+};
+
+// ── AudioContext fix ──
+function resumeAudioContext() {
+  try {
+    if (window.AudioContext || window.webkitAudioContext) {
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
+      var ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume().catch(function(){});
+    }
+  } catch (e) {}
+  document.removeEventListener('click', resumeAudioContext);
+  document.removeEventListener('touchstart', resumeAudioContext);
+  document.removeEventListener('keydown', resumeAudioContext);
+}
+document.addEventListener('click', resumeAudioContext);
+document.addEventListener('touchstart', resumeAudioContext);
+document.addEventListener('keydown', resumeAudioContext);
+
+// ══════════════════════════════════════════════
+// BLOCK DEFINITIONS (enkele defineBlocksWithJsonArray)
+// ══════════════════════════════════════════════
+Blockly.defineBlocksWithJsonArray([
+  { "type":"move_steps","message0":"move forward %1 steps",
+    "args0":[{"type":"field_number","name":"STEPS","value":1,"min":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":160 },
+  { "type":"move_backward","message0":"move backward %1 steps",
+    "args0":[{"type":"field_number","name":"STEPS","value":1,"min":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":160 },
+  { "type":"move_up","message0":"move up %1 units",
+    "args0":[{"type":"field_number","name":"STEPS","value":1,"min":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":160 },
+  { "type":"move_down","message0":"move down %1 units",
+    "args0":[{"type":"field_number","name":"STEPS","value":1,"min":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":160 },
+  { "type":"move_left","message0":"move left %1 units",
+    "args0":[{"type":"field_number","name":"STEPS","value":1,"min":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":160 },
+  { "type":"move_right","message0":"move right %1 units",
+    "args0":[{"type":"field_number","name":"STEPS","value":1,"min":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":160 },
+  { "type":"set_position","message0":"set position to x %1 y %2 z %3",
+    "args0":[{"type":"field_number","name":"X","value":0,"precision":0.1},
+             {"type":"field_number","name":"Y","value":0,"precision":0.1},
+             {"type":"field_number","name":"Z","value":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":160 },
+
+  { "type":"turn_direction","message0":"turn %1 %2 degrees",
+    "args0":[{"type":"field_dropdown","name":"DIR","options":[["right","right"],["left","left"]]},
+             {"type":"field_angle","name":"DEGREES","angle":90}],
+    "previousStatement":null,"nextStatement":null,"colour":230 },
+  { "type":"set_scale","message0":"set scale to %1",
+    "args0":[{"type":"field_number","name":"SCALE","value":1,"min":0.1,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":65 },
+  { "type":"set_color","message0":"set color to %1",
+    "args0":[{"type":"field_input","name":"COLOR","text":"#ff0000"}],
+    "previousStatement":null,"nextStatement":null,"colour":20 },
+  { "type":"say_message","message0":"say %1",
+    "args0":[{"type":"field_input","name":"TEXT","text":"hello"}],
+    "previousStatement":null,"nextStatement":null,"colour":290 },
+  { "type":"wait_seconds","message0":"wait %1 seconds",
+    "args0":[{"type":"field_number","name":"SECONDS","value":1,"min":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":120 },
+  { "type":"set_text","message0":"set TextMesh Pro on object %1 to %2",
+    "args0":[{"type":"field_input","name":"VARNAME","text":"myTextField"},
+             {"type":"input_value","name":"TEXT"}],
+    "previousStatement":null,"nextStatement":null,"colour":65 },
+  { "type":"if_gameobject_exists","message0":"if GameObject %1 exists %2",
+    "args0":[{"type":"field_input","name":"OBJECT","text":"targetObject"},
+             {"type":"input_statement","name":"DO"}],
+    "previousStatement":null,"nextStatement":null,"colour":120 },
+  { "type":"if_gameobject_tag_exists","message0":"if GameObject with tag %1 exists %2",
+    "args0":[{"type":"field_input","name":"TAG","text":"Enemy"},
+             {"type":"input_statement","name":"DO"}],
+    "previousStatement":null,"nextStatement":null,"colour":120 },
+  { "type":"if_object_of_type_exists","message0":"if object of type %1 exists %2",
+    "args0":[{"type":"field_dropdown","name":"TYPE","options":[["Camera","Camera"],["Canvas","Canvas"],["Rigidbody2D","Rigidbody2D"],["Collider2D","Collider2D"],["SpriteRenderer","SpriteRenderer"],["AudioSource","AudioSource"],["Light","Light"],["TMP_Text","TMP_Text"]]},
+             {"type":"input_statement","name":"DO"}],
+    "previousStatement":null,"nextStatement":null,"colour":120 },
+  { "type":"create_object","message0":"create object %1 at current position",
+    "args0":[{"type":"field_input","name":"VARNAME","text":"myPrefab"}],
+    "previousStatement":null,"nextStatement":null,"colour":200 },
+  { "type":"create_object_at_position","message0":"create prefab %1 at x %2 y %3 z %4",
+    "args0":[{"type":"field_input","name":"VARNAME","text":"myPrefab"},
+             {"type":"field_number","name":"X","value":0,"precision":0.1},
+             {"type":"field_number","name":"Y","value":0,"precision":0.1},
+             {"type":"field_number","name":"Z","value":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":200 },
+  { "type":"respawn_named","message0":"respawn with prefab field %1 at custom position x %2 y %3 z %4",
+    "args0":[{"type":"field_input","name":"PREFAB","text":"customPrefab"},
+             {"type":"field_number","name":"X","value":0,"precision":0.1},
+             {"type":"field_number","name":"Y","value":0,"precision":0.1},
+             {"type":"field_number","name":"Z","value":0,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":200 },
+  { "type":"destroy_object","message0":"destroy %1",
+    "args0":[{"type":"field_dropdown","name":"TARGET","options":[["self (this object)","self"],["named object","named"]]}],
+    "previousStatement":null,"nextStatement":null,"colour":0 },
+  { "type":"destroy_named","message0":"destroy object %1",
+    "args0":[{"type":"field_input","name":"VARNAME","text":"targetObject"}],
+    "previousStatement":null,"nextStatement":null,"colour":0 },
+  { "type":"destroy_by_tag","message0":"destroy all objects with tag %1",
+    "args0":[{"type":"field_input","name":"TAG","text":"Enemy"}],
+    "previousStatement":null,"nextStatement":null,"colour":0 },
+  { "type":"if_color_equals","message0":"if color of %1 is equal to %2 %3",
+    "args0":[{"type":"field_input","name":"OBJECT","text":"self"},
+             {"type":"field_input","name":"COLOR","text":"#ff0000"},
+             {"type":"input_statement","name":"DO"}],
+    "previousStatement":null,"nextStatement":null,"colour":120 },
+  { "type":"open_scene_by_index","message0":"open scene with index %1",
+    "args0":[{"type":"field_number","name":"INDEX","value":0,"min":0,"precision":1}],
+    "previousStatement":null,"nextStatement":null,"colour":0 },
+  { "type":"follow_object","message0":"follow %1 with speed %2",
+    "args0":[{"type":"field_input","name":"VARNAME","text":"target"},
+             {"type":"field_number","name":"SPEED","value":5,"min":0.1,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":200 },
+  { "type":"move_towards_object","message0":"move towards object %1 with speed %2",
+    "args0":[{"type":"field_input","name":"VARNAME","text":"target"},
+             {"type":"field_number","name":"SPEED","value":5,"min":0.1,"precision":0.1}],
+    "previousStatement":null,"nextStatement":null,"colour":200 },
+  { "type":"when_game_starts","message0":"when game starts %1",
+    "args0":[{"type":"input_statement","name":"DO"}],"colour":330 },
+  { "type":"when_game_updates","message0":"when game updates %1",
+    "args0":[{"type":"input_statement","name":"DO"}],"colour":330 },
+  { "type":"when_key_pressed","message0":"when key %1 pressed %2",
+    "args0":[{"type":"field_dropdown","name":"KEY","options":ALL_KEYS},
+             {"type":"input_statement","name":"DO"}],"colour":330 },
+  { "type":"when_key_held","message0":"when key %1 held %2",
+    "args0":[{"type":"field_dropdown","name":"KEY","options":ALL_KEYS},
+             {"type":"input_statement","name":"DO"}],"colour":330 },
+  { "type":"when_key_not_pressed","message0":"when key %1 released %2",
+    "args0":[{"type":"field_dropdown","name":"KEY","options":ALL_KEYS},
+             {"type":"input_statement","name":"DO"}],"colour":330 },
+{ "type":"when_collision_enter_2d","message0":"when 2D collision enter %1 %2 %3",
+  "args0":[{"type":"field_dropdown","name":"FILTER_TYPE","options":[["ANY object","any"],["tag equals","tag"],["name equals","name"],["color equals (#hex)","color"]]},
+           {"type":"field_input","name":"FILTER_VALUE","text":""},
+           {"type":"input_statement","name":"DO"}],
+  "colour":330 },
+{ "type":"when_trigger_enter_2d","message0":"when 2D trigger enter %1 %2 %3",
+  "args0":[{"type":"field_dropdown","name":"FILTER_TYPE","options":[["ANY object","any"],["tag equals","tag"],["name equals","name"],["color equals (#hex)","color"]]},
+           {"type":"field_input","name":"FILTER_VALUE","text":""},
+           {"type":"input_statement","name":"DO"}],
+  "colour":330 }
+]);
+
+// ══════════════════════════════════════════════
+// WORKSPACE INIT (enkele keer)
+// ══════════════════════════════════════════════
+var workspace = Blockly.inject('blocklyDiv', { toolbox: document.getElementById('toolbox') });
+
+// ══════════════════════════════════════════════
+// BLOCK TO COMMAND (voor Run/JSON)
+// ══════════════════════════════════════════════
+function blockToCommand(block) {
+  switch (block.type) {
+    case 'move_steps': return { action:'move_forward', value:parseFloat(block.getFieldValue('STEPS'))||1 };
+    case 'move_backward': return { action:'move_backward', value:parseFloat(block.getFieldValue('STEPS'))||1 };
+    case 'move_up': return { action:'move_up', value:parseFloat(block.getFieldValue('STEPS'))||1 };
+    case 'move_down': return { action:'move_down', value:parseFloat(block.getFieldValue('STEPS'))||1 };
+    case 'set_position': return { action:'set_position', x:parseFloat(block.getFieldValue('X'))||0, y:parseFloat(block.getFieldValue('Y'))||0, z:parseFloat(block.getFieldValue('Z'))||0 };
+    case 'turn_direction': return { action:block.getFieldValue('DIR')==='right'?'turn_right':'turn_left', value:parseFloat(block.getFieldValue('DEGREES'))||90 };
+    case 'set_scale': return { action:'set_scale', value:parseFloat(block.getFieldValue('SCALE'))||1 };
+    case 'set_color': return { action:'set_color', color:block.getFieldValue('COLOR')||'#ffffff' };
+    case 'say_message': return { action:'say', text:block.getFieldValue('TEXT')||'' };
+    case 'destroy_by_tag': return { action:'destroy_by_tag', text:(block.getFieldValue('TAG')||'').trim() };
+    case 'set_text':
+      var textValue = getRuntimeTextValue(block.getInputTargetBlock('TEXT'));
+      if (!textValue.supported) return null;
+      return { action:'set_text', target:block.getFieldValue('VARNAME')||'', text:textValue.text, textVariable:textValue.variable, textParts:textValue.parts };
+    case 'variables_set':
+      var variableValue = getRuntimeTextValue(block.getInputTargetBlock('VALUE'));
+      if (!variableValue.supported) return null;
+      return { action:'set_variable', variable:block.getFieldValue('VAR'), text:variableValue.text, valueVariable:variableValue.variable, textParts:variableValue.parts };
+    case 'follow_object':
+    case 'move_towards_object': return { action:block.type, text:block.getFieldValue('VARNAME')||'', value:parseFloat(block.getFieldValue('SPEED'))||5 };
+    default: return null;
+  }
+}
+
+function getRuntimeTextValue(block) {
+  if (!block) return { text:'', variable:'', parts:[], supported:false };
+  if (block.type === 'text') {
+    var text = block.getFieldValue('TEXT')||'';
+    return { text:text, variable:'', parts:[{text:text, variable:''}], supported:true };
+  }
+  if (block.type === 'variables_get') {
+    var variable = block.getFieldValue('VAR')||'';
+    return { text:'', variable:variable, parts:[{text:'', variable:variable}], supported:true };
+  }
+  if (block.type === 'text_join') {
+    var parts=[];
+    for (var i=0;i<block.itemCount_;i++) {
+      var child=block.getInputTargetBlock('ADD'+i);
+      if (!child) {
+        parts.push({text:'', variable:''});
+        continue;
+      }
+      var value=getRuntimeTextValue(child);
+      if (!value.supported) return { text:'', variable:'', parts:[], supported:false };
+      parts=parts.concat(value.parts);
+    }
+    return { text:'', variable:'', parts:parts, supported:true };
+  }
+  return { text:'', variable:'', parts:[], supported:false };
+}
+
+function collectStatementCommands(firstBlock, commands) {
+  var current = firstBlock;
+  while (current) {
+    var cmd = blockToCommand(current);
+    if (cmd) commands.push(cmd);
+    if (current.type === 'when_game_starts')
+      collectStatementCommands(current.getInputTargetBlock('DO'), commands);
+    current = current.getNextBlock();
+  }
+}
+
+function getProgram() {
+  var commands = [];
+  var updateCommands = [];
+  workspace.getTopBlocks(true).forEach(function(block) {
+    if (block.type === 'when_game_starts')
+      collectStatementCommands(block.getInputTargetBlock('DO'), commands);
+    else if (block.type === 'when_game_updates')
+      collectStatementCommands(block.getInputTargetBlock('DO'), updateCommands);
+    else
+      collectStatementCommands(block, commands);
+  });
+  return { commands: commands, updateCommands: updateCommands };
+}
+
+// ══════════════════════════════════════════════
+// C# GENERATOR
+// ══════════════════════════════════════════════
+Blockly.CSharp = new Blockly.Generator('CSharp');
+Blockly.CSharp.ORDER_ATOMIC = 0;
+Blockly.CSharp.ORDER_NONE = 99;
+Blockly.CSharp.ORDER_ASSIGNMENT = 1;
+Blockly.CSharp.forBlock = Blockly.CSharp.forBlock || {};
+
+
+Blockly.CSharp.forBlock['move_left'] = function(b) {
+  var v=Number(b.getFieldValue('STEPS'))||1;
+  return 'MoveBy(Vector2.left * '+v.toFixed(1)+'f);\n';
+};
+Blockly.CSharp.forBlock['move_right'] = function(b) {
+  var v=Number(b.getFieldValue('STEPS'))||1;
+  return 'MoveBy(Vector2.right * '+v.toFixed(1)+'f);\n';
+};
+Blockly.CSharp.forBlock['create_object'] = function(block) {
+  var v = (block.getFieldValue('VARNAME')||'myPrefab').replace(/[^a-zA-Z0-9_]/g,'');
+  if (prefabDeclarations.indexOf(v)===-1) prefabDeclarations.push(v);
+  return 'if ('+v+' != null) { var obj = Instantiate('+v+', transform.position, transform.rotation); } else Debug.LogError("Assign prefab field in Inspector: " + '+JSON.stringify(v)+');\n';
+};
+Blockly.CSharp.forBlock['create_object_at_position'] = function(block) {
+  var v = (block.getFieldValue('VARNAME')||'myPrefab').replace(/[^a-zA-Z0-9_]/g,'');
+  var x = Number(block.getFieldValue('X'))||0;
+  var y = Number(block.getFieldValue('Y'))||0;
+  var z = Number(block.getFieldValue('Z'))||0;
+  if (prefabDeclarations.indexOf(v)===-1) prefabDeclarations.push(v);
+  return 'if ('+v+' != null) { var obj = Instantiate('+v+', new Vector3('+x.toFixed(1)+'f, '+y.toFixed(1)+'f, '+z.toFixed(1)+'f), Quaternion.identity); } else Debug.LogError("Assign prefab field in Inspector: " + '+JSON.stringify(v)+');\n';
+};
+Blockly.CSharp.forBlock['respawn_named'] = function(block) {
+  var prefab = (block.getFieldValue('PREFAB')||'ricardoPrefab').replace(/[^a-zA-Z0-9_]/g,'')||'ricardoPrefab';
+  var x = Number(block.getFieldValue('X'))||0;
+  var y = Number(block.getFieldValue('Y'))||0;
+  var z = Number(block.getFieldValue('Z'))||0;
+  if (prefabDeclarations.indexOf(prefab)===-1) prefabDeclarations.push(prefab);
+  return 'if ('+prefab+' == null) Debug.LogError("Assign prefab field in Inspector: " + '+JSON.stringify(prefab)+'); else { var replacement = Instantiate('+prefab+', new Vector3('+x.toFixed(1)+'f, '+y.toFixed(1)+'f, '+z.toFixed(1)+'f), transform.rotation); Debug.Log("Respawned " + replacement.name + " at " + replacement.transform.position); Destroy(gameObject); }\n';
+};
+Blockly.CSharp.forBlock['destroy_object'] = function(block) {
+  return 'Destroy(gameObject);\n';
+};
+Blockly.CSharp.forBlock['destroy_named'] = function(block) {
+  var v = (block.getFieldValue('VARNAME')||'targetObject').replace(/[^a-zA-Z0-9_]/g,'');
+  if (destroyObjectDeclarations.indexOf(v)===-1) destroyObjectDeclarations.push(v);
+  return 'if ('+v+' != null) Destroy('+v+'.gameObject);\n';
+};
+Blockly.CSharp.forBlock['destroy_by_tag'] = function(block) {
+  var tag=(block.getFieldValue('TAG')||'Untagged').trim();
+  return 'DestroyByTag('+JSON.stringify(tag)+');\n';
+};
+Blockly.CSharp.forBlock['if_color_equals'] = function(block) {
+  var objectName=(block.getFieldValue('OBJECT')||'self').trim();
+  var color=(block.getFieldValue('COLOR')||'#ffffff').trim();
+  var body=Blockly.CSharp.statementToCode(block,'DO');
+  var target=objectName==='self'||!objectName?'gameObject':'GameObject.Find('+JSON.stringify(objectName)+')';
+  return 'if (ColorEquals('+target+', '+JSON.stringify(color)+')) {\n'+body+'}\n';
+};
+Blockly.CSharp.forBlock['open_scene_by_index'] = function(block) {
+  var i = Math.max(0, Math.floor(Number(block.getFieldValue('INDEX'))||0));
+  return 'UnityEngine.SceneManagement.SceneManager.LoadScene('+i+');\n';
+};
+Blockly.CSharp.forBlock['follow_object'] = function(block) {
+  var v = (block.getFieldValue('VARNAME')||'target').replace(/[^a-zA-Z0-9_]/g,'');
+  var s = Number(block.getFieldValue('SPEED'))||5;
+  if (targetTransformDeclarations.indexOf(v)===-1) targetTransformDeclarations.push(v);
+  usesFollowRoutine = true;
+  return 'if ('+v+' != null) StartCoroutine(FollowTarget('+v+', '+s.toFixed(1)+'f, false));\n';
+};
+Blockly.CSharp.forBlock['move_towards_object'] = function(block) {
+  var v = (block.getFieldValue('VARNAME')||'target').replace(/[^a-zA-Z0-9_]/g,'');
+  var s = Number(block.getFieldValue('SPEED'))||5;
+  if (targetTransformDeclarations.indexOf(v)===-1) targetTransformDeclarations.push(v);
+  usesFollowRoutine = true;
+  return 'if ('+v+' != null) StartCoroutine(FollowTarget('+v+', '+s.toFixed(1)+'f, true));\n';
+};
+Blockly.CSharp.forBlock['set_text'] = function(block) {
+  var objectName = (block.getFieldValue('VARNAME')||'myTextField').trim();
+  var v = objectName.replace(/[^a-zA-Z0-9_]/g,'')||'myTextField';
+  if (variableCsNames.indexOf(v)!==-1) v += 'Text';
+  var t = Blockly.CSharp.valueToCode(block,'TEXT',Blockly.CSharp.ORDER_NONE)||'""';
+  if (textFieldDeclarations.indexOf(v)===-1) textFieldDeclarations.push(v);
+  textFieldObjects[v]=objectName;
+  return 'if ('+v+' != null) { '+v+'.gameObject.SetActive(true); '+v+'.text = '+t+'; }\n';
+};
+Blockly.CSharp.forBlock['move_steps'] = function(b) { var v=Number(b.getFieldValue('STEPS'))||1; return 'MoveBy(Vector2.up * '+v.toFixed(1)+'f);\n'; };
+Blockly.CSharp.forBlock['move_backward'] = function(b) { var v=Number(b.getFieldValue('STEPS'))||1; return 'MoveBy(Vector2.down * '+v.toFixed(1)+'f);\n'; };
+Blockly.CSharp.forBlock['move_up'] = function(b) { var v=Number(b.getFieldValue('STEPS'))||1; return 'MoveBy(Vector2.up * '+v.toFixed(1)+'f);\n'; };
+Blockly.CSharp.forBlock['move_down'] = function(b) { var v=Number(b.getFieldValue('STEPS'))||1; return 'MoveBy(Vector2.down * '+v.toFixed(1)+'f);\n'; };
+Blockly.CSharp.forBlock['set_position'] = function(b) {
+  var x=Number(b.getFieldValue('X'))||0; var y=Number(b.getFieldValue('Y'))||0; var z=Number(b.getFieldValue('Z'))||0;
+  return 'transform.position = new Vector3('+x.toFixed(1)+'f, '+y.toFixed(1)+'f, '+z.toFixed(1)+'f);\n';
+};
+Blockly.CSharp.forBlock['turn_direction'] = function(b) {
+  var d=b.getFieldValue('DIR'); var deg=Number(b.getFieldValue('DEGREES'))||90;
+  return 'transform.Rotate(Vector3.up, '+(d==='right'?'':'-')+deg.toFixed(1)+'f);\n';
+};
+Blockly.CSharp.forBlock['set_scale'] = function(b) { var v=Number(b.getFieldValue('SCALE'))||1; return 'transform.localScale = Vector3.one * '+v.toFixed(1)+'f;\n'; };
+Blockly.CSharp.forBlock['set_color'] = function(b) {
+  var c=b.getFieldValue('COLOR')||'#ffffff';
+  return 'if (ColorUtility.TryParseHtmlString("'+c+'", out var col)) {\n  var sprite = GetComponent<SpriteRenderer>();\n  if (sprite != null) sprite.color = col;\n  else { var rend = GetComponent<Renderer>(); if (rend != null) rend.material.color = col; }\n}\n';
+};
+Blockly.CSharp.forBlock['say_message'] = function(b) { var t=b.getFieldValue('TEXT')||''; return 'Debug.Log("'+t.replace(/"/g,'\\"')+'");\n'; };
+Blockly.CSharp.forBlock['wait_seconds'] = function(b) { var v=Number(b.getFieldValue('SECONDS'))||1; return 'yield return new WaitForSeconds('+v.toFixed(1)+'f);\n'; };
+
+Blockly.CSharp.forBlock['when_key_pressed'] = function(b) {
+  var k=KEY_MAP[b.getFieldValue('KEY')]||'spaceKey'; var body=Blockly.CSharp.statementToCode(b,'DO');
+  return 'if (Keyboard.current.'+k+'.wasPressedThisFrame) {\n'+body+'}\n';
+};
+Blockly.CSharp.forBlock['when_game_starts'] = function(block) {
+  return Blockly.CSharp.statementToCode(block,'DO');
+};
+Blockly.CSharp.forBlock['when_game_updates'] = function(block) {
+  return Blockly.CSharp.statementToCode(block,'DO');
+};
+Blockly.CSharp.forBlock['when_key_held'] = function(b) {
+  var k=KEY_MAP[b.getFieldValue('KEY')]||'spaceKey'; var body=Blockly.CSharp.statementToCode(b,'DO');
+  return 'if (Keyboard.current.'+k+'.isPressed) {\n'+body+'}\n';
+};
+Blockly.CSharp.forBlock['when_key_not_pressed'] = function(b) {
+  var k=KEY_MAP[b.getFieldValue('KEY')]||'spaceKey'; var body=Blockly.CSharp.statementToCode(b,'DO');
+  return 'if (Keyboard.current.'+k+'.wasReleasedThisFrame) {\n'+body+'}\n';
+};
+
+function generateFiltered2DEvent(block, methodName, parameterType) {
+  var filterType=block.getFieldValue('FILTER_TYPE')||'any';
+  var filterValue=(block.getFieldValue('FILTER_VALUE')||'').trim();
+  var body=Blockly.CSharp.statementToCode(block,'DO');
+  var signature='void '+methodName+'('+parameterType+' other)';
+  var eventLog='  Debug.Log("Blockly '+methodName+' with " + other.gameObject.name + " (tag " + other.gameObject.tag + ")");\n';
+  var full;
+  if (filterType==='any'||(filterType!=='color'&&!filterValue)) full=signature+' {\n'+eventLog+body+'}\n';
+  else if (filterType==='tag') full=signature+' {\n'+eventLog+'  if (other.gameObject.CompareTag('+JSON.stringify(filterValue)+')) {\n'+body+'  }\n}\n';
+  else if (filterType==='name') full=signature+' {\n'+eventLog+'  if (other.gameObject.name == '+JSON.stringify(filterValue)+') {\n'+body+'  }\n}\n';
+  else full=signature+' {\n'+eventLog+'  var sprite = other.gameObject.GetComponent<SpriteRenderer>();\n  if (sprite != null && ColorUtility.TryParseHtmlString('+JSON.stringify(filterValue)+', out var filterColor)) {\n    var actualColor = (Color32)sprite.color;\n    var expectedColor = (Color32)filterColor;\n    if (actualColor.r == expectedColor.r && actualColor.g == expectedColor.g && actualColor.b == expectedColor.b && actualColor.a == expectedColor.a) {\n'+body+'    }\n  }\n}\n';
+  if (body.indexOf('yield return')===-1) return full;
+  var routine=methodName+'Routine';
+  return signature+' {\n  StartCoroutine('+routine+'(other));\n}\n'+full.replace(signature,'IEnumerator '+routine+'('+parameterType+' other)');
+}
+Blockly.CSharp.forBlock['when_collision_enter_2d'] = function(block) {
+  return generateFiltered2DEvent(block,'OnCollisionEnter2D','Collision2D');
+};
+Blockly.CSharp.forBlock['when_trigger_enter_2d'] = function(block) {
+  return generateFiltered2DEvent(block,'OnTriggerEnter2D','Collider2D');
+};
+
+Blockly.CSharp.forBlock['controls_if'] = function(block) {
+  var cond=Blockly.CSharp.valueToCode(block,'IF0',Blockly.CSharp.ORDER_NONE)||'false';
+  var branch=Blockly.CSharp.statementToCode(block,'DO0');
+  var code='if ('+cond+') {\n'+branch+'}\n';
+  if (block.getInput('ELSE')) { var eb=Blockly.CSharp.statementToCode(block,'ELSE'); code+='else {\n'+eb+'}\n'; }
+  return code;
+};
+Blockly.CSharp.forBlock['controls_ifelse'] = Blockly.CSharp.forBlock['controls_if'];
+Blockly.CSharp.forBlock['if_gameobject_exists'] = function(block) {
+  var objectName=block.getFieldValue('OBJECT')||'';
+  var body=Blockly.CSharp.statementToCode(block,'DO');
+  return 'if (GameObject.Find('+JSON.stringify(objectName)+') != null) {\n'+body+'}\n';
+};
+Blockly.CSharp.forBlock['if_gameobject_tag_exists'] = function(block) {
+  var tag=(block.getFieldValue('TAG')||'Untagged').trim();
+  var body=Blockly.CSharp.statementToCode(block,'DO');
+  return 'if (TagExists('+JSON.stringify(tag)+')) {\n'+body+'}\n';
+};
+Blockly.CSharp.forBlock['if_object_of_type_exists'] = function(block) {
+  var type=block.getFieldValue('TYPE')||'Camera';
+  var body=Blockly.CSharp.statementToCode(block,'DO');
+  return 'if (FindAnyObjectByType<'+type+'>() != null) {\n'+body+'}\n';
+};
+Blockly.CSharp.forBlock['controls_repeat_ext'] = function(block) {
+  var r=Blockly.CSharp.valueToCode(block,'TIMES',Blockly.CSharp.ORDER_NONE)||'0';
+  var b=Blockly.CSharp.statementToCode(block,'DO');
+  var guard=b.indexOf('yield return')!==-1?'  yield return null;\n':'';
+  return 'for (int i = 0; i < '+r+'; i++) {\n'+b+guard+'}\n';
+};
+Blockly.CSharp.forBlock['logic_compare'] = function(block) {
+  var OPS={'EQ':'==','NEQ':'!=','LT':'<','LTE':'<=','GT':'>','GTE':'>='};
+  var op=OPS[block.getFieldValue('OP')]; var o=Blockly.CSharp.ORDER_ATOMIC;
+  var a0=Blockly.CSharp.valueToCode(block,'A',o)||'0'; var a1=Blockly.CSharp.valueToCode(block,'B',o)||'0';
+  return [a0+' '+op+' '+a1,o];
+};
+Blockly.CSharp.forBlock['logic_operation'] = function(block) {
+  var op=block.getFieldValue('OP')==='AND'?'&&':'||'; var o=Blockly.CSharp.ORDER_ATOMIC;
+  var a0=Blockly.CSharp.valueToCode(block,'A',o)||'false'; var a1=Blockly.CSharp.valueToCode(block,'B',o)||'false';
+  return [a0+' '+op+' '+a1,o];
+};
+Blockly.CSharp.forBlock['logic_boolean'] = function(block) {
+  return [block.getFieldValue('BOOL')==='TRUE'?'true':'false',Blockly.CSharp.ORDER_ATOMIC];
+};
+Blockly.CSharp.forBlock['math_number'] = function(block) {
+  return [Number(block.getFieldValue('NUM')).toString(),Blockly.CSharp.ORDER_ATOMIC];
+};
+Blockly.CSharp.forBlock['math_arithmetic'] = function(block) {
+  var OPS={'ADD':'+','MINUS':'-','MULTIPLY':'*','DIVIDE':'/','POWER':'Mathf.Pow'};
+  var op=block.getFieldValue('OP'); var o=Blockly.CSharp.ORDER_ATOMIC;
+  var a0=Blockly.CSharp.valueToCode(block,'A',o)||'0'; var a1=Blockly.CSharp.valueToCode(block,'B',o)||'0';
+  if (op==='POWER') return ['Mathf.Pow('+a0+', '+a1+')',o];
+  return [a0+' '+OPS[op]+' '+a1,o];
+};
+Blockly.CSharp.forBlock['variables_get'] = function(block) {
+  return [Blockly.CSharp.nameDB_.getName(block.getFieldValue('VAR'),Blockly.Names.NameType.VARIABLE),Blockly.CSharp.ORDER_ATOMIC];
+};
+Blockly.CSharp.forBlock['variables_set'] = function(block) {
+  var vn=Blockly.CSharp.nameDB_.getName(block.getFieldValue('VAR'),Blockly.Names.NameType.VARIABLE);
+  var val=Blockly.CSharp.valueToCode(block,'VALUE',Blockly.CSharp.ORDER_ASSIGNMENT)||'0';
+  var valueBlock=block.getInputTargetBlock('VALUE');
+  if (valueBlock && (valueBlock.type==='text'||valueBlock.type==='text_join') && textFieldDeclarations.indexOf('var:'+vn)===-1)
+    textFieldDeclarations.push('var:'+vn);
+  return vn+' = '+val+';\n';
+};
+Blockly.CSharp.forBlock['math_change'] = function(block) {
+  var vn=Blockly.CSharp.nameDB_.getName(block.getFieldValue('VAR'),Blockly.Names.NameType.VARIABLE);
+  var delta=Blockly.CSharp.valueToCode(block,'DELTA',Blockly.CSharp.ORDER_ASSIGNMENT)||'0';
+  return vn+' += '+delta+';\n';
+};
+Blockly.CSharp.forBlock['text'] = function(block) {
+  return [JSON.stringify(block.getFieldValue('TEXT')||''),Blockly.CSharp.ORDER_ATOMIC];
+};
+Blockly.CSharp.forBlock['text_join'] = function(block) {
+  var parts=[];
+  for (var i=0;i<block.itemCount_;i++)
+    parts.push(Blockly.CSharp.valueToCode(block,'ADD'+i,Blockly.CSharp.ORDER_NONE)||'""');
+  return ['string.Concat('+parts.join(', ')+')',Blockly.CSharp.ORDER_ATOMIC];
+};
+Blockly.CSharp.scrub_ = function(block, code) {
+  var next=block.nextConnection&&block.nextConnection.targetBlock();
+  return code+Blockly.CSharp.blockToCode(next);
+};
+
+// ══════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ══════════════════════════════════════════════
+function isKeyEventBlock(type) {
+  return type==='when_key_pressed'||type==='when_key_not_pressed'||type==='when_key_held';
+}
+function isMethodEventBlock(type) {
+  return type==='when_collision_enter_2d'||type==='when_trigger_enter_2d';
+}
+function indentCode(code, levels) {
+  var indent='    '.repeat(levels);
+  return code.split('\n').map(function(l){return l?indent+l:'';}).join('\n');
+}
+
+// ══════════════════════════════════════════════
+// GENERATE C#
+// ══════════════════════════════════════════════
+function generateCSharp(className) {
+  className=className||'BlocklyProgram';
+  Blockly.CSharp.init(workspace);
+  Blockly.CSharp.nameDB_=new Blockly.Names(Blockly.CSharp.RESERVED_WORDS_);
+  Blockly.CSharp.nameDB_.setVariableMap(workspace.getVariableMap());
+  textFieldDeclarations=[]; textFieldObjects={}; prefabDeclarations=[]; targetTransformDeclarations=[]; destroyObjectDeclarations=[]; usesFollowRoutine=false;
+  var topBlocks=workspace.getTopBlocks(true);
+  var startCode='',updateCode='',methodCode='';
+  variableCsNames=[];
+  var usedVariables=workspace.getAllVariables().filter(function(m){return workspace.getVariableUsesById(m.getId()).length>0;});
+  usedVariables.forEach(function(m){variableCsNames.push(Blockly.CSharp.nameDB_.getName(m.getId(),Blockly.Names.NameType.VARIABLE));});
+
+  topBlocks.forEach(function(block) {
+    var code=Blockly.CSharp.blockToCode(block);
+    if(!code) return;
+    if(isKeyEventBlock(block.type)||block.type==='when_game_updates') updateCode+=code;
+    else if(isMethodEventBlock(block.type)) methodCode+=code+'\n';
+    else startCode+=code;
+  });
+  var startWait=startCode.indexOf('yield return')!==-1;
+  var updateWait=updateCode.indexOf('yield return')!==-1;
+
+  var fieldCode='';
+  textFieldDeclarations.forEach(function(v){
+    if (v.indexOf('var:')===0) fieldCode+='    public string '+v.substring(4)+' = "";\n';
+    else fieldCode+='    public TMP_Text '+v+';\n';
+  });
+  variableCsNames.forEach(function(v){
+    if (textFieldDeclarations.indexOf('var:'+v)===-1) fieldCode+='    public float '+v+';\n';
+  });
+  prefabDeclarations.forEach(function(v){fieldCode+='    public GameObject '+v+';\n';});
+  targetTransformDeclarations.forEach(function(v){fieldCode+='    public Transform '+v+';\n';});
+  destroyObjectDeclarations.forEach(function(v){fieldCode+='    public Transform '+v+';\n';});
+
+  var classBody=fieldCode;
+  var textFields=Object.keys(textFieldObjects);
+  if(textFields.length) {
+    classBody+='    void Awake()\n    {\n';
+    textFields.forEach(function(f){classBody+='        if ('+f+' == null) '+f+' = FindText('+JSON.stringify(textFieldObjects[f])+');\n';});
+    classBody+='    }\n\n    TMP_Text FindText(string objectName)\n    {\n        foreach (var text in FindObjectsByType<TMP_Text>(FindObjectsInactive.Include, FindObjectsSortMode.None))\n        {\n            if (text.gameObject.name == objectName || (text.transform.parent != null && text.transform.parent.name == objectName))\n                return text;\n        }\n        return null;\n    }\n\n';
+  }
+  var startBody=(updateWait?'StartCoroutine(UpdateRoutine());\n':'')+startCode;
+  if(startBody.trim()){
+    var sr=startWait?'IEnumerator':'void';
+    classBody+='    '+sr+' Start()\n    {\n'+indentCode(startBody,2)+'    }\n';
+  }
+  if(updateCode.trim()) {
+    if(updateWait) classBody+='\n    IEnumerator UpdateRoutine()\n    {\n        while (true)\n        {\n'+indentCode(updateCode,3)+'            yield return null;\n        }\n    }\n';
+    else classBody+='\n    void Update()\n    {\n'+indentCode(updateCode,2)+'    }\n';
+  }
+  if(methodCode.trim()) classBody+='\n'+indentCode(methodCode,1);
+  if(usesFollowRoutine) classBody+='\n    IEnumerator FollowTarget(Transform target, float speed, bool stopAtTarget)\n    {\n        while (target != null)\n        {\n            transform.position = Vector3.MoveTowards(transform.position, target.position, speed * Time.deltaTime);\n            if (stopAtTarget && (transform.position - target.position).sqrMagnitude < 0.0001f)\n                yield break;\n            yield return null;\n        }\n    }\n';
+  if(classBody.indexOf('TagExists(')!==-1) classBody+='\n    bool TagExists(string tagName)\n    {\n        try\n        {\n            return GameObject.FindWithTag(tagName) != null;\n        }\n        catch (UnityException)\n        {\n            Debug.LogError("Tag does not exist in Unity (Tags and Layers): " + tagName);\n            return false;\n        }\n    }\n';
+  if(classBody.indexOf('DestroyByTag(')!==-1) {
+    var holdsText=textFields.length?textFields.map(function(f){return '('+f+' != null && '+f+'.transform.IsChildOf(go.transform))';}).join(' || '):'false';
+    classBody+='\n    bool HoldsText(GameObject go)\n    {\n        return '+holdsText+';\n    }\n';
+  }
+  if(classBody.indexOf('DestroyByTag(')!==-1) classBody+='\n    void DestroyByTag(string tagName)\n    {\n        try\n        {\n            foreach (var tagged in GameObject.FindGameObjectsWithTag(tagName))\n            {\n                if (HoldsText(tagged)) continue;\n                Destroy(tagged);\n            }\n        }\n        catch (UnityException)\n        {\n            Debug.LogError("Tag does not exist in Unity (Tags and Layers): " + tagName);\n        }\n    }\n';
+  if(classBody.indexOf('ColorEquals(')!==-1) classBody+='\n    bool ColorEquals(GameObject target, string hex)\n    {\n        if (target == null || !ColorUtility.TryParseHtmlString(hex, out var expected))\n            return false;\n        Color actual;\n        var sprite = target.GetComponent<SpriteRenderer>();\n        if (sprite != null) actual = sprite.color;\n        else\n        {\n            var rend = target.GetComponent<Renderer>();\n            if (rend == null) return false;\n            actual = rend.material.color;\n        }\n        Color32 a = actual, e = expected;\n        return a.r == e.r && a.g == e.g && a.b == e.b && a.a == e.a;\n    }\n';
+  classBody+='\n    void MoveBy(Vector2 offset)\n    {\n';
+  classBody+='        var body = GetComponent<Rigidbody2D>();\n';
+  classBody+='        if (body == null)\n        {\n            Debug.LogError("Add a Rigidbody2D to this object to use Blockly movement.");\n            return;\n        }\n';
+  classBody+='        body.MovePosition(body.position + offset);\n';
+  classBody+='    }\n';
+  var imports='using UnityEngine;\n';
+  if(classBody.indexOf('IEnumerator')!==-1) imports+='using System.Collections;\n';
+  imports+='using UnityEngine.InputSystem;\nusing TMPro;\n';
+
+  lastGeneratedCode=imports+'\npublic class '+className+' : MonoBehaviour\n{\n'+classBody+'}\n';
+  lastClassName=className;
+  var output=document.getElementById('codeOutput');
+  output.textContent=lastGeneratedCode;
+  output.style.display='block';
+  document.getElementById('status').textContent='C# gegenereerd';
+}
+
+// ══════════════════════════════════════════════
+// SAVE / DOWNLOAD C#
+// ══════════════════════════════════════════════
+function saveCSharp() {
+  var fileName='';
+  var message='Enter a name for the C# file (required):';
+  while(!fileName) {
+    var input=prompt(message,lastClassName||'BlocklyProgram');
+    if(input===null) return;
+    fileName=input.replace(/[^a-zA-Z0-9_]/g,'');
+    if(!fileName||/^[0-9]/.test(fileName)) {
+      fileName='';
+      message='Invalid name. Use letters, digits or _ and do not start with a digit:';
+    }
+  }
+  generateCSharp(fileName);
+  downloadFile(fileName+'.cs',lastGeneratedCode);
+}
+
+function downloadFile(fileName, content) {
+  var blob=new Blob([content],{type:'application/octet-stream'});
+  var url=URL.createObjectURL(blob);
+  var link=document.createElement('a');
+  link.href=url;
+  link.download=fileName;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(function(){
+    link.remove();
+    URL.revokeObjectURL(url);
+  },1000);
+  document.getElementById('status').textContent='Download gestart';
+}
+
+// ══════════════════════════════════════════════
+// RUN / EXPORT JSON
+// ══════════════════════════════════════════════
+function sendUnity(program) {
+  var msg=JSON.stringify(program);
+  document.getElementById('status').textContent='Send: '+msg;
+  if(window.Unity&&typeof window.Unity.call==='function') Unity.call(msg);
+  else if(window.unityInstance&&typeof window.unityInstance.SendMessage==='function')
+    window.unityInstance.SendMessage('BlocklyIntegration','OnBlocklyMessage',msg);
+  else if(window.location.hostname==='127.0.0.1') {
+    fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:msg})
+      .then(function(response) {
+        if(!response.ok) throw new Error('HTTP '+response.status);
+        document.getElementById('status').textContent='Commando naar Unity gestuurd';
+      })
+      .catch(function(error) {
+        document.getElementById('status').textContent='Unity-verbinding mislukt';
+        console.error('Unity bridge error:',error);
+      });
+  } else console.log('Unity niet gevonden:',msg);
+}
+function runBlockly() { sendUnity(getProgram()); }
+function startNewWorkspace() {
+  if (workspace.getAllBlocks(false).length &&
+      !confirm('Nieuw programma starten? De huidige blokken worden gewist.')) return;
+
+  workspace.clear();
+  localStorage.removeItem(autoWorkspaceKey);
+  lastSavedName='';
+  document.getElementById('status').textContent='Nieuw programma';
+}
+function exportJson() {
+  var payload=JSON.stringify(getProgram(),null,2);
+  navigator.clipboard.writeText(payload).then(function(){alert('JSON gekopieerd naar klembord');},
+    function(){console.log(payload);alert('Kopieer mislukt. Kijk in de console.');});
+}
+
+// ══════════════════════════════════════════════
+// WORKSPACE SAVE / LOAD / DELETE
+// ══════════════════════════════════════════════
+function updateSavedCodeList() {
+  var listContainer=document.getElementById('savedCodeList');
+  listContainer.innerHTML='';
+  var workspaces=[];
+  for(var i=0;i<localStorage.length;i++){
+    var key=localStorage.key(i);
+    if(key.startsWith(savedCodePrefix)&&!key.endsWith('_timestamp')){
+      var name=key.replace(savedCodePrefix,'');
+      var ts=localStorage.getItem(key+'_timestamp')||'N/A';
+      workspaces.push({name:name,timestamp:ts,key:key});
+    }
+  }
+  if(workspaces.length===0){listContainer.innerHTML='<div style="color:#888;">Geen opgeslagen codes</div>';return;}
+  // Missing/invalid timestamps ('N/A') count as oldest so they sort last.
+  function tsValue(ws){var t=new Date(ws.timestamp).getTime();return isNaN(t)?0:t;}
+  workspaces.sort(function(a,b){return tsValue(b)-tsValue(a);});
+  workspaces.forEach(function(ws){
+    var item=document.createElement('div');
+    item.style.cssText='padding:6px;margin:4px 0;background:#2e3438;border-radius:4px;cursor:pointer;';
+    var ns=document.createElement('span');
+    ns.textContent=ws.name; ns.onclick=function(){loadWorkspaceByKey(ws.key);};
+    ns.style.cssText='cursor:pointer;color:#6d4aff;font-weight:bold;';
+    var ts=document.createElement('span');
+    ts.textContent=' ('+new Date(ws.timestamp).toLocaleTimeString()+')'; ts.style.color='#888';
+    var db=document.createElement('span');
+    db.textContent=' ✕'; db.style.cssText='float:right;cursor:pointer;color:#c62828;';
+    db.onclick=function(e){e.stopPropagation();deleteWorkspaceByKey(ws.key);};
+    item.appendChild(ns);item.appendChild(ts);item.appendChild(db);
+    listContainer.appendChild(item);
+  });
+}
+
+function saveWorkspaceWithName() {
+  var defaultName=lastSavedName||'myprogram';
+  var name=prompt('Geef een naam voor je workspace:',defaultName);
+  if(!name) return;
+  name=name.replace(/[^a-zA-Z0-9_-]/g,'');
+  if(!name){alert('Ongeldige naam.');return;}
+  try {
+    var xml=Blockly.Xml.workspaceToDom(workspace);
+    var xmlText=Blockly.Xml.domToText(xml);
+    var key=savedCodePrefix+name;
+    localStorage.setItem(key,xmlText);
+    localStorage.setItem(key+'_timestamp',new Date().toISOString());
+    lastSavedName=name;
+    document.getElementById('status').textContent='Workspace "'+name+'" opgeslagen!';
+    updateSavedCodeList();
+  } catch(e){document.getElementById('status').textContent='Opslaan mislukt: '+e.message;}
+}
+
+function loadWorkspaceFromList() {
+  updateSavedCodeList();
+  var panel=document.getElementById('savedCodePanel');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+}
+
+function loadWorkspaceByKey(key) {
+  try {
+    var saved=localStorage.getItem(key);
+    if(!saved){alert('Workspace niet gevonden.');return;}
+    workspace.clear();
+    var xml=Blockly.utils.xml.textToDom(saved);
+    Blockly.Xml.domToWorkspace(xml,workspace);
+    document.getElementById('status').textContent='Workspace "'+key.replace(savedCodePrefix,'')+'" geladen!';
+    document.getElementById('savedCodePanel').style.display='none';
+  } catch(e){document.getElementById('status').textContent='Laden mislukt: '+e.message;}
+}
+
+function deleteWorkspace() {
+  var name=prompt('Welke workspace wil je verwijderen? (Naam):');
+  if(!name) return;
+  name=name.replace(/[^a-zA-Z0-9_-]/g,'');
+  if(!name){alert('Ongeldige naam.');return;}
+  var key=savedCodePrefix+name;
+  if(confirm('Workspace "'+name+'" permanent verwijderen?')){
+    localStorage.removeItem(key);
+    localStorage.removeItem(key+'_timestamp');
+    document.getElementById('status').textContent='Workspace verwijderd.';
+    updateSavedCodeList();
+  }
+}
+
+function deleteWorkspaceByKey(key) {
+  var name=key.replace(savedCodePrefix,'');
+  if(confirm('Workspace "'+name+'" permanent verwijderen?')){
+    localStorage.removeItem(key);
+    localStorage.removeItem(key+'_timestamp');
+    document.getElementById('status').textContent='Workspace verwijderd.';
+    updateSavedCodeList();
+  }
+}
+
+function clearAllWorkspaces() {
+  if(confirm('Alle opgeslagen workspaces permanent verwijderen? Dit kan niet ongedaan worden gemaakt.')){
+    var keysToRemove=[];
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(k.startsWith(savedCodePrefix)){keysToRemove.push(k);keysToRemove.push(k+'_timestamp');}
+    }
+    keysToRemove.forEach(function(k){localStorage.removeItem(k);});
+    document.getElementById('status').textContent='Alle workspaces verwijderd.';
+    updateSavedCodeList();
+  }
+}
+
+function toggleSavedCodePanel() {
+  var panel=document.getElementById('savedCodePanel');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+  if(panel.style.display==='block') updateSavedCodeList();
+}
+
+// Restore the last workspace when Unity opens the editor page.
+var autoWorkspace = localStorage.getItem(autoWorkspaceKey);
+if (autoWorkspace) {
+  try {
+    var autoWorkspaceDom = Blockly.utils.xml.textToDom(autoWorkspace);
+    Blockly.Xml.domToWorkspace(autoWorkspaceDom, workspace);
+  } catch (e) {
+    document.getElementById('status').textContent='Workspace herstellen mislukt: '+e.message;
+  }
+}
+
+workspace.addChangeListener(function(event) {
+  if (event.isUiEvent) return;
+  try {
+    var xml = Blockly.Xml.workspaceToDom(workspace);
+    localStorage.setItem(autoWorkspaceKey, Blockly.Xml.domToText(xml));
+  } catch (e) {
+    console.error('Workspace automatisch opslaan mislukt:',e);
+  }
+});
+
+updateSavedCodeList();
+</script>
+</body>
+</html>
