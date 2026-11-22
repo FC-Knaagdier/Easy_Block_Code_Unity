@@ -1,0 +1,22 @@
+Easy Block Code
+Copyright 2026 FC Knaagdier
+
+This product includes software developed by FC Knaagdier
+(https://github.com/FC-Knaagdier/Easy_Block_Code_Unity).
+Licensed under the Apache License, Version 2.0. See the LICENSE file.
+
+=====================================================================
+Third-party software
+=====================================================================
+
+Blockly
+  Copyright Google LLC
+  https://github.com/google/blockly
+  Licensed under the Apache License, Version 2.0
+  Used version: 11.2.1 (loaded from https://unpkg.com/blockly@11.2.1/
+  by StreamingAssets/Blockly/index.html; not included in this repository).
+
+Unity Engine (UnityEngine / UnityEditor)
+  Copyright Unity Technologies
+  This plugin requires Unity. Unity itself is not part of this package and is
+  covered by its own license terms: https://unity.com/legal
